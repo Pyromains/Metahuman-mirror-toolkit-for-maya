@@ -3,6 +3,21 @@
 A toolkit for Autodesk Maya designed to speed up sculpting workflows on MetaHuman head meshes sharing the official Epic Games topology.
 
 > **Status:** v1.0.0
+ 
+## Why this project?
+
+MetaHuman Mirror Toolkit was originally developed to solve a repetitive production problem encountered during the creation of a personal project.
+
+As the toolkit proved useful in daily production, it was decided to make it publicly available so that other artists and developers could benefit from it and contribute to its evolution.
+
+The primary goal of this project is to provide practical production tools rather than experimental features.
+
+## Project Status
+
+MetaHuman Mirror Toolkit is actively developed and maintained alongside alongside other personal projects.
+
+While the core features are stable and used regularly, the toolkit is still evolving and new features will continue to be added and refined over time.
+
 
 ## Features
 
@@ -64,8 +79,8 @@ Useful for transferring ears, lips, noses or any sculpted region.
 Planned ideas (not implemented yet):
 
 -   Better visualization tools
--   Brush-based mirror workflow
--   Additional analysis tools
+-   Other FaceMesh type support
+-   Advanced comparison tools
 
 ## Contributing
 
@@ -73,14 +88,6 @@ Bug fixes, performance improvements and workflow-oriented features are always we
 
 Please keep contributions: - focused; - documented; - backward
 compatible whenever possible.
-
-## Why this project?
-
-MetaHuman Mirror Toolkit was originally developed to solve a repetitive production problem encountered during the creation of a personal project.
-
-As the toolkit proved useful in daily production, it was decided to make it publicly available so that other artists and developers could benefit from it and contribute to its evolution.
-
-The primary goal of this project is to provide practical production tools rather than experimental features.
 
 ## License
 
