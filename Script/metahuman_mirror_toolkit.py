@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-MetaHuman Mirror Toolkit v1.0.0
+MetaHuman Mirror Toolkit v1.1.0
 Autodesk Maya / Python 3
 
 A focused toolkit for Epic MetaHuman head_lod0 meshes sharing the same
@@ -47,7 +47,7 @@ import maya.cmds as cmds
 import mesh_revision_manager
 
 
-VERSION = "1.2.0"
+VERSION = "1.1.0"
 WINDOW_NAME = "metaHumanMirrorToolkitWindow"
 WINDOW_TITLE = f"MetaHuman Mirror Toolkit v{VERSION}"
 
@@ -231,10 +231,11 @@ def _validate_topology(*meshes: str) -> int:
 
 def _validate_same_topology(*meshes: str) -> int:
     """
-    Validate meshes that must share the same vertex count and vertex order.
+    Validate meshes that must share the same vertex count.
 
     This check deliberately does not require a Mirror Map. It is used by
-    direct mesh comparison and non-mirrored vertex transfer.
+    direct mesh comparison and non-mirrored vertex transfer. Same vertex
+    order is assumed by the workflow, not verified here.
     """
     if not meshes:
         raise RuntimeError("No meshes were provided.")
@@ -759,8 +760,8 @@ def _perform_direct_snap() -> None:
     Example:
         Target.vtx[123] <- Source.vtx[123]
 
-    Both meshes must be non-mirrored and must share the exact same topology and
-    vertex order.
+    Both meshes must be non-mirrored and must share the same vertex count.
+    Same vertex order is assumed.
     """
     target, indices, components = _selected_vertices(
         required=True
@@ -1287,8 +1288,9 @@ def show() -> None:
 
     cmds.text(
         label=(
-            "Target Mesh and Source / Compare Mesh must be non-mirrored and share "
-            "the exact same topology and vertex order."
+            "Target Mesh and Source / Compare Mesh must be non-mirrored, share "
+            "the same vertex count, and use the same vertex order "
+            "(assumed)."
         ),
         align="left",
         wordWrap=True,
@@ -1401,7 +1403,7 @@ def show() -> None:
     cmds.setParent(root)
 
     UI["status"] = cmds.text(
-        label=f"Ready — v{VERSION}",
+        label=f"Ready - v{VERSION}",
         align="left",
         height=38,
         backgroundColor=(0.25, 0.25, 0.25),
