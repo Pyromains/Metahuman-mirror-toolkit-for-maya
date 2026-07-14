@@ -19,6 +19,7 @@ Stable features
 - Same-topology mesh comparison.
 - Largest-difference list with direct Maya selection.
 - Session progress history and CSV export.
+- Append-only OBJ mesh revision snapshots with comments and restore tools.
 
 Removed from this public-ready build
 ------------------------------------
@@ -43,10 +44,12 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import maya.api.OpenMaya as om
 import maya.cmds as cmds
 
+import mesh_revision_manager
 
-VERSION = "1.0.0"
+
+VERSION = "1.2.0"
 WINDOW_NAME = "metaHumanMirrorToolkitWindow"
-WINDOW_TITLE = f"MetaHuman Mirror Toolkit for maya v{VERSION}"
+WINDOW_TITLE = f"MetaHuman Mirror Toolkit v{VERSION}"
 
 MIRROR_MAP: Optional[Dict] = None
 UI: Dict[str, str] = {}
@@ -1047,6 +1050,14 @@ def show() -> None:
     if cmds.window(WINDOW_NAME, exists=True):
         cmds.deleteUI(WINDOW_NAME)
 
+    # Reloading keeps development iterations convenient in Maya.
+    import importlib
+    importlib.reload(mesh_revision_manager)
+    mesh_revision_manager.configure(
+        target_mesh_getter=_target_mesh,
+        status_callback=_set_status,
+    )
+
     cmds.window(
         WINDOW_NAME,
         title=WINDOW_TITLE,
@@ -1313,6 +1324,18 @@ def show() -> None:
 
     cmds.setParent(tabs)
 
+    # Revisions
+    revisions_tab = cmds.columnLayout(
+        adjustableColumn=True,
+        rowSpacing=8,
+    )
+
+    mesh_revision_manager.build_ui(
+        parent=revisions_tab,
+    )
+
+    cmds.setParent(tabs)
+
     # Progress
     progress_tab = cmds.columnLayout(
         adjustableColumn=True,
@@ -1370,6 +1393,7 @@ def show() -> None:
             (snap_tab, "Snap"),
             (analysis_tab, "Analysis"),
             (compare_tab, "Compare"),
+            (revisions_tab, "Revisions"),
             (progress_tab, "Progress"),
         ),
     )
