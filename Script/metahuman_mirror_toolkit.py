@@ -302,6 +302,10 @@ def _set_mesh_from_selection(field_key: str) -> None:
         edit=True,
         text=mesh,
     )
+
+    if field_key == "target":
+        mesh_revision_manager.sync_with_target_mesh()
+
     _set_status(f"Mesh set: {mesh}", True)
 
 

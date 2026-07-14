@@ -590,19 +590,45 @@ def _revision_label(row: Dict) -> str:
     )
 
 
-@_guard
-def refresh_revisions(*_args) -> None:
-    revisions = list_revisions()
+def sync_with_target_mesh(silent: bool = True) -> None:
+    """
+    Refresh the revision UI for the currently configured Target Mesh.
+
+    When silent is True, expected setup states such as an unsaved Maya scene
+    or a mesh with no existing revisions simply reset the UI without warnings.
+    """
+    revision_list = UI.get("revision_list")
+    latest_label = UI.get("latest")
+
+    if not revision_list or not latest_label:
+        return
+
+    try:
+        target_mesh = _target_mesh()
+        _scene_path()
+        _metadata, _revision_dir, metadata_path = _load_metadata(
+            target_mesh,
+            create_if_missing=False,
+        )
+
+        if not metadata_path.exists():
+            revisions = []
+        else:
+            revisions = list_revisions()
+    except Exception:
+        if not silent:
+            raise
+        revisions = []
 
     cmds.textScrollList(
-        UI["revision_list"],
+        revision_list,
         edit=True,
         removeAll=True,
     )
 
     for row in revisions:
         cmds.textScrollList(
-            UI["revision_list"],
+            revision_list,
             edit=True,
             append=_revision_label(row),
         )
@@ -610,7 +636,7 @@ def refresh_revisions(*_args) -> None:
     latest = revisions[0]["version"] if revisions else 0
 
     cmds.text(
-        UI["latest"],
+        latest_label,
         edit=True,
         label=(
             f"Latest revision: v{latest:03d}"
@@ -618,6 +644,12 @@ def refresh_revisions(*_args) -> None:
             else "No revision saved yet."
         ),
     )
+
+
+@_guard
+def refresh_revisions(*_args) -> None:
+    revisions = list_revisions()
+    sync_with_target_mesh(silent=False)
 
     _status(
         f"Revision list refreshed: {len(revisions)} revision(s).",
