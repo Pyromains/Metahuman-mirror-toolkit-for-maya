@@ -39,7 +39,9 @@ While the core features are stable and used regularly, the toolkit is still evol
 
 ## Installation
 
-1. Copy `metahuman_mirror_toolkit.py` and `mesh_revision_manager.py`.
+1. Copy the three files from `Script` into the same Maya scripts directory:
+   `metahuman_mirror_toolkit.py`, `mesh_revision_manager.py`, and
+   `mh_bulk_restore_command.py`.
 2. Launch Maya.
 3. Run:
 

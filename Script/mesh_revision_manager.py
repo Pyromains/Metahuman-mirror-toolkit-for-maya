@@ -25,15 +25,19 @@ from __future__ import annotations
 import json
 import os
 import re
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
 import maya.api.OpenMaya as om
 import maya.cmds as cmds
+import maya.mel as mel
 
 
 MODULE_VERSION = "1.0.0"
+BULK_RESTORE_PLUGIN = "mh_bulk_restore_command"
+BULK_RESTORE_COMMAND = "mhBulkSetPoints"
 UI: Dict[str, str] = {}
 _CONTEXT: Dict[str, Callable] = {}
 
@@ -219,6 +223,111 @@ def _write_metadata(metadata: Dict, metadata_path: Path) -> None:
     os.replace(str(temporary_path), str(metadata_path))
 
 
+@contextmanager
+def _without_undo_recording() -> Iterator[None]:
+    """Keep temporary OBJ scene operations out of the user's undo queue."""
+    undo_enabled = bool(cmds.undoInfo(query=True, state=True))
+
+    if undo_enabled:
+        cmds.undoInfo(stateWithoutFlush=False)
+
+    try:
+        yield
+    finally:
+        if undo_enabled:
+            cmds.undoInfo(stateWithoutFlush=True)
+
+
+def _ensure_bulk_restore_command() -> None:
+    plugin_path = Path(__file__).with_name(f"{BULK_RESTORE_PLUGIN}.py")
+    plugin_name = BULK_RESTORE_PLUGIN
+
+    if not plugin_path.exists():
+        raise RuntimeError(
+            f"Required Maya plug-in file not found: {plugin_path.name}"
+        )
+
+    try:
+        loaded = cmds.pluginInfo(
+            BULK_RESTORE_PLUGIN,
+            query=True,
+            loaded=True,
+        )
+    except RuntimeError:
+        loaded = False
+
+    if not loaded:
+        loaded_plugins = cmds.loadPlugin(str(plugin_path), quiet=True) or []
+        if loaded_plugins:
+            plugin_name = loaded_plugins[0]
+
+    registered_commands = cmds.pluginInfo(
+        plugin_name,
+        query=True,
+        command=True,
+    ) or []
+
+    if BULK_RESTORE_COMMAND not in registered_commands:
+        raise RuntimeError(
+            f"Maya loaded {plugin_path.name} but did not register "
+            f"the {BULK_RESTORE_COMMAND} command. Restart Maya and try again."
+        )
+
+
+def _encode_indices(indices: Sequence[int]) -> str:
+    """Encode sorted indices as compact comma-separated ranges."""
+    ordered = sorted(set(int(index) for index in indices))
+    if not ordered:
+        raise RuntimeError("No vertex indices were provided.")
+
+    ranges = []
+    start = previous = ordered[0]
+
+    for index in ordered[1:]:
+        if index == previous + 1:
+            previous = index
+            continue
+
+        ranges.append(str(start) if start == previous else f"{start}-{previous}")
+        start = previous = index
+
+    ranges.append(str(start) if start == previous else f"{start}-{previous}")
+    return ",".join(ranges)
+
+
+def _mel_string(value: str) -> str:
+    """Quote a Python string for use as one MEL command argument."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _run_bulk_restore(
+    target_shape: str,
+    source_shape: str,
+    indices: Optional[Sequence[int]] = None,
+) -> int:
+    """Invoke the registered command without relying on maya.cmds wrappers."""
+    arguments = [
+        BULK_RESTORE_COMMAND,
+        "-target",
+        _mel_string(target_shape),
+        "-source",
+        _mel_string(source_shape),
+    ]
+
+    if indices is not None:
+        arguments.extend(("-indices", _mel_string(_encode_indices(indices))))
+
+    result = mel.eval(" ".join(arguments))
+    if isinstance(result, (list, tuple)):
+        if len(result) != 1:
+            raise RuntimeError(
+                f"Unexpected result from {BULK_RESTORE_COMMAND}: {result}"
+            )
+        result = result[0]
+
+    return int(result)
+
+
 def _next_revision_number(
     metadata: Dict,
     revision_dir: Path,
@@ -394,17 +503,18 @@ def _import_revision_mesh(filepath: Path) -> str:
         cmds.ls(long=True, assemblies=True) or []
     )
 
-    cmds.file(
-        str(filepath),
-        i=True,
-        type="OBJ",
-        ignoreVersion=True,
-        mergeNamespacesOnClash=False,
-        namespace="MHRevisionTemp",
-        options="mo=0",
-        preserveReferences=True,
-        returnNewNodes=False,
-    )
+    with _without_undo_recording():
+        cmds.file(
+            str(filepath),
+            i=True,
+            type="OBJ",
+            ignoreVersion=True,
+            mergeNamespacesOnClash=False,
+            namespace="MHRevisionTemp",
+            options="mo=0",
+            preserveReferences=True,
+            returnNewNodes=False,
+        )
 
     after = set(
         cmds.ls(long=True, assemblies=True) or []
@@ -440,7 +550,8 @@ def _import_revision_mesh(filepath: Path) -> str:
 
     if len(imported_meshes) != 1:
         if imported_roots:
-            cmds.delete(imported_roots)
+            with _without_undo_recording():
+                cmds.delete(imported_roots)
         raise RuntimeError(
             "The revision OBJ must contain exactly one mesh."
         )
@@ -458,6 +569,16 @@ def restore_revision(
         create_if_missing=False,
     )
 
+    # OBJ import changes Maya's active selection, so capture the requested
+    # target region before importing the temporary revision mesh.
+    if selected_only:
+        _selected_mesh, indices, components = _selected_target_vertices(
+            target_mesh
+        )
+    else:
+        indices = []
+        components = []
+
     filepath = revision_dir / revision["file"]
     imported_mesh = _import_revision_mesh(filepath)
 
@@ -471,61 +592,40 @@ def restore_revision(
                 "vertex count."
             )
 
-        target_points = list(
-            target_fn.getPoints(om.MSpace.kWorld)
-        )
-        imported_points = list(
-            imported_fn.getPoints(om.MSpace.kWorld)
-        )
-
-        if selected_only:
-            selected_mesh, indices, components = _selected_target_vertices(
-                target_mesh
-            )
-        else:
+        if not selected_only:
             indices = list(range(target_fn.numVertices))
-            components = [
-                f"{target_mesh}.vtx[{index}]"
-                for index in indices
-            ]
 
-        cmds.undoInfo(
-            openChunk=True,
-            chunkName="RestoreMeshRevision",
+        _ensure_bulk_restore_command()
+        restored_count = _run_bulk_restore(
+            target_shape=_mesh_shape(target_mesh),
+            source_shape=_mesh_shape(imported_mesh),
+            indices=indices if selected_only else None,
         )
 
-        try:
-            for index, component in zip(indices, components):
-                point = imported_points[index]
-                cmds.xform(
-                    component,
-                    worldSpace=True,
-                    translation=(point.x, point.y, point.z),
-                )
-        finally:
-            cmds.undoInfo(closeChunk=True)
+        # Keep the bulk command as the latest undoable scene operation.
+        with _without_undo_recording():
+            if selected_only:
+                cmds.select(components, replace=True)
+            else:
+                cmds.select(target_mesh, replace=True)
 
-        if selected_only:
-            cmds.select(components, replace=True)
-        else:
-            cmds.select(target_mesh, replace=True)
-
-        return len(indices)
+        return restored_count
     finally:
-        if cmds.objExists(imported_mesh):
-            cmds.delete(imported_mesh)
+        with _without_undo_recording():
+            if cmds.objExists(imported_mesh):
+                cmds.delete(imported_mesh)
 
-        if cmds.namespace(exists="MHRevisionTemp"):
-            remaining = cmds.namespaceInfo(
-                "MHRevisionTemp",
-                listOnlyDependencyNodes=True,
-            ) or []
+            if cmds.namespace(exists="MHRevisionTemp"):
+                remaining = cmds.namespaceInfo(
+                    "MHRevisionTemp",
+                    listOnlyDependencyNodes=True,
+                ) or []
 
-            if not remaining:
-                cmds.namespace(
-                    removeNamespace="MHRevisionTemp",
-                    mergeNamespaceWithRoot=True,
-                )
+                if not remaining:
+                    cmds.namespace(
+                        removeNamespace="MHRevisionTemp",
+                        mergeNamespaceWithRoot=True,
+                    )
 
 
 def _selected_target_vertices(

@@ -21,12 +21,6 @@ Stable features
 - Session progress history and CSV export.
 - Append-only OBJ mesh revision snapshots with comments and restore tools.
 
-Removed from this public-ready build
-------------------------------------
-- Soft Selection / falloff experiments.
-- Heatmap experiments.
-- Different-topology surface comparison.
-
 Expected topology
 -----------------
 The supplied mirror map targets MetaHuman head_lod0_mesh with 24,049 vertices.
